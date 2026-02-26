@@ -1,0 +1,108 @@
+// FlowSync — Prisma Schema
+// Workflow orchestration engine
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Workflow {
+  id             String      @id @default(uuid())
+  name           String
+  description    String?
+  version        Int         @default(1)
+  definitionJson Json
+  status         String      @default("draft") // draft | active | archived
+  userId         String?     // Clerk user ID
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  executions     Execution[]
+  triggers       Trigger[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+// ─── Phase 2: Execution Engine ──────────────────────────────────────────────
+
+model Execution {
+  id          String   @id @default(uuid())
+  workflowId  String
+  status      String   @default("pending") // pending | running | completed | failed | cancelled
+  input       Json?
+  output      Json?
+  userId      String?  // Clerk user ID
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  workflow    Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  steps       StepExecution[]
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model StepExecution {
+  id          String   @id @default(uuid())
+  executionId String
+  nodeId      String
+  nodeLabel   String
+  nodeType    String
+  status      String   @default("pending") // pending | running | completed | failed | skipped
+  attempts    Int      @default(0)
+  result      Json?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  execution   Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([status])
+}
+
+// ─── Phase 3: Trigger System ────────────────────────────────────────────────
+
+model Trigger {
+  id          String   @id @default(uuid())
+  workflowId  String
+  type        String   // manual | webhook | cron
+  config      Json     @default("{}")
+  enabled     Boolean  @default(true)
+  userId      String?  // Clerk user ID
+  lastFiredAt DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([type])
+  @@index([userId])
+}
+
+// ─── Phase 9: Observability ─────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  event      String   // execution.started | execution.completed | execution.failed | trigger.fired | step.retried | dlq.entry | scheduler.tick
+  entityType String   // execution | trigger | step | scheduler
+  entityId   String
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([event])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
