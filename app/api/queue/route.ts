@@ -7,7 +7,7 @@ import type { ApiResponse } from "@/lib/types";
 
 export async function GET() {
     try {
-        const status = getConsumerStatus();
+        const status = await getConsumerStatus();
         const dlqItems = dlq.getItems().map((item) => ({
             jobId: item.job.id,
             nodeLabel: item.job.node.label,

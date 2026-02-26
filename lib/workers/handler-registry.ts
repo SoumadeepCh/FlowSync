@@ -10,6 +10,8 @@ import { DelayHandler } from "./handlers/delay-handler";
 import { ConditionHandler } from "./handlers/condition-handler";
 import { ForkHandler } from "./handlers/fork-handler";
 import { JoinHandler } from "./handlers/join-handler";
+import { TransformHandler } from "./handlers/transform-handler";
+import { WebhookResponseHandler } from "./handlers/webhook-response-handler";
 
 class HandlerRegistry {
     private handlers = new Map<string, ActionHandler>();
@@ -56,6 +58,8 @@ registry.register(new DelayHandler());
 registry.register(new ConditionHandler());
 registry.register(new ForkHandler());
 registry.register(new JoinHandler());
+registry.register(new TransformHandler());
+registry.register(new WebhookResponseHandler());
 
 export { registry };
 export default registry;

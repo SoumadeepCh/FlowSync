@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../app/generated/prisma"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -106,3 +106,26 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
 }
+
+// ─── Phase 11: Persistent Job Queue ─────────────────────────────────────────
+
+model JobQueue {
+  id          String   @id @default(uuid())
+  executionId String
+  nodeId      String
+  nodeLabel   String
+  nodeType    String
+  payload     Json     // full WorkerJob serialized
+  status      String   @default("pending") // pending | processing | done | failed
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  lockedAt    DateTime?
+  lockedBy    String?  // worker instance ID
+  result      Json?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([executionId])
+}
+

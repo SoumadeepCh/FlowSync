@@ -7,7 +7,7 @@
 // Phase 9.5: Configurable timeout increased to 5 minutes.
 
 import { prisma } from "./prisma";
-import { Prisma } from "@/app/generated/prisma/client";
+import { Prisma } from "@/generated/prisma";
 import type { WorkflowDefinition } from "./types";
 import { publishJob } from "./queue/job-publisher";
 import { executionEvents } from "./queue/result-handler";

@@ -7,7 +7,7 @@
 // Phase 9: Instrumented with metrics, logging, and audit trail.
 
 import { prisma } from "../prisma";
-import { Prisma } from "@/app/generated/prisma/client";
+import { Prisma } from "@/generated/prisma";
 import type { WorkerResult } from "../workers/worker-types";
 import type { WorkflowDefinition, WorkflowEdge } from "../types";
 import { publishJob } from "./job-publisher";

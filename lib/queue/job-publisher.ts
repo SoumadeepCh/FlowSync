@@ -86,7 +86,7 @@ export async function publishJob(params: {
     }
 
     // Enqueue for the consumer
-    jobQueue.enqueue(job);
+    await jobQueue.enqueue(job);
 
     return step.id;
 }

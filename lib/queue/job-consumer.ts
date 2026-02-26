@@ -1,9 +1,10 @@
-// ─── Phase 5+6+9+9.5: Job Consumer ──────────────────────────────────────────
+// ─── Phase 5+6+9+9.5+11: Job Consumer ───────────────────────────────────────
 //
 // Worker loop that dequeues jobs, dispatches to action handlers,
 // and feeds results back through the result handler.
 // Phase 6: Adds retry with exponential backoff and dead-letter queue.
 // Phase 9: Instrumented with structured logging, metrics, and audit trail.
+// Phase 11: Switched to polling-based PostgreSQL dequeue.
 
 import { jobQueue } from "./job-queue";
 import { handleResult } from "./result-handler";
@@ -17,44 +18,76 @@ import { logger } from "../observability/logger";
 import { metrics } from "../observability/metrics";
 import { recordAudit } from "../observability/audit-trail";
 import { workerHeartbeat } from "../workers/worker-heartbeat";
+import { v4 as uuid } from "uuid";
 
 let isRunning = false;
 let isShuttingDown = false;
 let activeJobs = 0;
 let totalRetries = 0;
-const MAX_CONCURRENCY = 5; // Phase 9.5: Increased concurrency for production
+const MAX_CONCURRENCY = 5;
+const POLL_INTERVAL_MS = 500; // Phase 11: Poll every 500ms
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+// Unique worker ID for this consumer instance
+const WORKER_ID = `worker-${uuid().slice(0, 8)}`;
 
 /**
- * Start the consumer loop. Listens for new jobs and processes them.
+ * Start the consumer loop.
+ * Phase 11: Uses polling-based dequeue from PostgreSQL.
  */
 export function startConsumer(): void {
     if (isRunning) return;
     isRunning = true;
 
-    // Process any jobs already in the queue
-    drainQueue();
+    logger.info("Consumer started", { workerId: WORKER_ID, pollIntervalMs: POLL_INTERVAL_MS });
 
-    // Listen for new jobs
+    // Also listen for event-driven notifications (immediate pickup for freshly enqueued jobs)
     jobQueue.onJob(() => {
         drainQueue();
     });
+
+    // Phase 11: Poll the DB on an interval for any pending jobs
+    pollTimer = setInterval(() => {
+        if (!isShuttingDown) drainQueue();
+    }, POLL_INTERVAL_MS);
+
+    // Initial drain
+    drainQueue();
 }
 
 /**
  * Process jobs from the queue up to the concurrency limit.
+ * Phase 11: Uses async dequeue with workerId for row-level locking.
  */
 function drainQueue(): void {
     if (isShuttingDown) return;
-    while (activeJobs < MAX_CONCURRENCY && jobQueue.depth > 0) {
-        const job = jobQueue.dequeue();
-        if (!job) break;
 
+    while (activeJobs < MAX_CONCURRENCY) {
         activeJobs++;
-        processJob(job).finally(() => {
-            activeJobs--;
-            // Try to drain more after completing
-            if (jobQueue.depth > 0) drainQueue();
-        });
+
+        // Async dequeue — fire and forget, it will schedule more drains
+        (async () => {
+            try {
+                const job = await jobQueue.dequeue(WORKER_ID);
+                if (!job) {
+                    activeJobs--;
+                    return;
+                }
+                try {
+                    await processJob(job);
+                } finally {
+                    activeJobs--;
+                    // Try to drain more after completing
+                    drainQueue();
+                }
+            } catch {
+                activeJobs--;
+            }
+        })();
+
+        // Only launch one async dequeue at a time per drain call
+        // The processJob completion will trigger another drainQueue
+        break;
     }
 }
 
@@ -77,7 +110,7 @@ async function processJob(job: WorkerJob): Promise<void> {
         });
     } catch {
         // Step might have been cancelled/skipped already
-        jobQueue.markFailed();
+        await jobQueue.markFailed(job.id, "Step no longer exists or was cancelled");
         workerHeartbeat.deregisterJob(job.id);
         return;
     }
@@ -95,18 +128,18 @@ async function processJob(job: WorkerJob): Promise<void> {
             status: "failed",
             error: `No handler registered for node type: "${job.node.type}"`,
             durationMs: 0,
-            retryable: false, // No handler = not retryable
+            retryable: false,
         };
-        jobQueue.markFailed();
+        await jobQueue.markFailed(job.id, result.error);
     } else {
         try {
             result = await handler.execute(job);
             // Phase 9.5: Heartbeat during execution
             workerHeartbeat.heartbeat(job.id);
             if (result.status === "completed") {
-                jobQueue.markProcessed();
+                await jobQueue.markDone(job.id, result.result);
             } else {
-                jobQueue.markFailed();
+                await jobQueue.markFailed(job.id, result.error);
             }
         } catch (err) {
             result = {
@@ -116,9 +149,9 @@ async function processJob(job: WorkerJob): Promise<void> {
                 status: "failed",
                 error: err instanceof Error ? err.message : String(err),
                 durationMs: 0,
-                retryable: true, // Unhandled errors are retryable by default
+                retryable: true,
             };
-            jobQueue.markFailed();
+            await jobQueue.markFailed(job.id, result.error);
         }
     }
 
@@ -128,7 +161,6 @@ async function processJob(job: WorkerJob): Promise<void> {
         result.retryable !== false &&
         job.attempt < job.maxRetries
     ) {
-        // Schedule retry with exponential backoff
         const retryConfig = getRetryConfig(job.node.config);
         const delay =
             retryConfig.backoffMs *
@@ -238,13 +270,14 @@ function getRetryConfig(config: Record<string, unknown>) {
 /**
  * Get consumer status info.
  */
-export function getConsumerStatus() {
+export async function getConsumerStatus() {
     return {
         isRunning,
+        workerId: WORKER_ID,
         activeJobs,
         maxConcurrency: MAX_CONCURRENCY,
         totalRetries,
-        queueStats: jobQueue.getStats(),
+        queueStats: await jobQueue.getStats(),
         dlqStats: dlq.getStats(),
     };
 }
@@ -256,6 +289,13 @@ export async function stopConsumer(): Promise<void> {
     if (!isRunning) return;
 
     isShuttingDown = true;
+
+    // Stop the polling timer
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+
     logger.info("Consumer shutting down, waiting for active jobs...", {
         activeJobs,
     });

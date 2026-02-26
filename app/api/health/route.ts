@@ -25,7 +25,7 @@ export async function GET() {
         }
 
         // 2. Consumer status
-        const consumer = getConsumerStatus();
+        const consumer = await getConsumerStatus();
 
         // 3. Worker heartbeat
         const heartbeat = workerHeartbeat.getStatus();

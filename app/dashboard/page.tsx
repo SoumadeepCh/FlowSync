@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
     Plus, Trash2, Play, Pause, RefreshCw,
-    LayoutGrid, CheckCircle, FileText, Zap,
+    LayoutGrid, CheckCircle, FileText, Zap, Pencil,
 } from "lucide-react";
 
 interface Workflow {
@@ -309,6 +309,12 @@ export default function DashboardPage() {
                                         {runningId === w.id ? "Running…" : "Run"}
                                     </button>
                                 )}
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => router.push(`/workflows/${w.id}/editor`)}
+                                >
+                                    <Pencil size={13} /> Edit DAG
+                                </button>
                                 <button
                                     className="btn btn-ghost btn-sm"
                                     onClick={() => handleToggleStatus(w.id, w.status)}
