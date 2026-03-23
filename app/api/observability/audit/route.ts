@@ -1,11 +1,15 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { queryAuditLog } from "@/lib/observability/audit-trail";
 import type { ApiResponse } from "@/lib/types";
+import { requireAuth, isAuthError } from "@/lib/auth";
 
 // ─── GET /api/observability/audit ── Audit log entries ──────────────────────
 
-export async function GET(request: NextRequest) {
+async function GET_handler(request: NextRequest) {
     try {
+        const userId = await requireAuth();
+
         const { searchParams } = new URL(request.url);
 
         const event = searchParams.get("event") || undefined;
@@ -18,6 +22,7 @@ export async function GET(request: NextRequest) {
             event,
             entityType,
             entityId,
+            userId,
             limit,
             offset,
         });
@@ -27,6 +32,7 @@ export async function GET(request: NextRequest) {
             data: result,
         });
     } catch (error) {
+        if (isAuthError(error)) return error.response;
         console.error("Error fetching audit log:", error);
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Failed to fetch audit log" },
@@ -34,3 +40,6 @@ export async function GET(request: NextRequest) {
         );
     }
 }
+
+
+export const GET = withRateLimit(GET_handler);

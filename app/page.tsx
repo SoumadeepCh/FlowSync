@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { Show } from "@clerk/nextjs";
 import { GitBranch, Clock, BarChart3, Shield } from "lucide-react";
 
 export default function Home() {
@@ -14,19 +14,19 @@ export default function Home() {
         executing, and monitoring DAG-based workflows at scale.
       </p>
       <div className="hero-actions">
-        <SignedIn>
+        <Show when="signed-in">
           <Link href="/dashboard" className="btn btn-primary">
             ⚡ Open Dashboard
           </Link>
-        </SignedIn>
-        <SignedOut>
+        </Show>
+        <Show when="signed-out">
           <Link href="/sign-in" className="btn btn-primary">
             ⚡ Sign In to Get Started
           </Link>
           <Link href="/sign-up" className="btn btn-ghost">
             Create Account →
           </Link>
-        </SignedOut>
+        </Show>
       </div>
 
       {/* Feature Highlights */}

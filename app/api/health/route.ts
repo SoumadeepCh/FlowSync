@@ -1,3 +1,5 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getConsumerStatus } from "@/lib/queue/job-consumer";
@@ -11,7 +13,7 @@ const startTime = Date.now();
 
 // ─── GET /api/health ── Health check / readiness probe ──────────────────────
 
-export async function GET() {
+async function GET_handler() {
     try {
         // 1. DB connectivity check
         let dbStatus = "healthy";
@@ -41,6 +43,23 @@ export async function GET() {
 
         const uptimeMs = Date.now() - startTime;
         const isHealthy = dbStatus === "healthy" && consumer.isRunning;
+
+        // Check authentication for returning internal stats
+        const { userId } = await auth();
+
+        if (!userId) {
+            return NextResponse.json<ApiResponse>(
+                {
+                    success: true,
+                    data: {
+                        status: isHealthy ? "healthy" : "degraded",
+                        uptimeMs,
+                        timestamp: new Date().toISOString(),
+                    },
+                },
+                { status: isHealthy ? 200 : 503 }
+            );
+        }
 
         return NextResponse.json<ApiResponse>(
             {
@@ -116,3 +135,5 @@ function formatUptime(ms: number): string {
     if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
     return `${seconds}s`;
 }
+
+export const GET = withRateLimit(GET_handler);

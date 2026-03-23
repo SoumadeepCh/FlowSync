@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CreateWorkflowSchema } from "@/lib/validations";
@@ -7,7 +8,7 @@ import { requireAuth, isAuthError } from "@/lib/auth";
 
 // ─── GET /api/workflows ── List user's workflows ─────────────────────────────
 
-export async function GET(request: NextRequest) {
+async function GET_handler(request: NextRequest) {
     try {
         const userId = await requireAuth();
 
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
 
 // ─── POST /api/workflows ── Create a new workflow ────────────────────────────
 
-export async function POST(request: NextRequest) {
+async function POST_handler(request: NextRequest) {
     try {
         const userId = await requireAuth();
 
@@ -96,3 +97,7 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
+
+export const GET = withRateLimit(GET_handler);
+export const POST = withRateLimit(POST_handler);

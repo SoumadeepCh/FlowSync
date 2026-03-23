@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { ApiResponse } from "@/lib/types";
@@ -7,7 +8,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // ─── POST /api/executions/[id]/cancel ── Cancel execution ────────────────────
 
-export async function POST(request: NextRequest, context: RouteContext) {
+async function POST_handler(request: NextRequest, context: RouteContext) {
     try {
         const userId = await requireAuth();
         const { id } = await context.params;
@@ -66,3 +67,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
     }
 }
+
+
+export const POST = withRateLimit(POST_handler);

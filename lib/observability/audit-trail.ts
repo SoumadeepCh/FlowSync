@@ -72,15 +72,32 @@ export async function queryAuditLog(options?: {
     event?: string;
     entityType?: string;
     entityId?: string;
+    userId?: string;
     limit?: number;
     offset?: number;
 }) {
-    const { event, entityType, entityId, limit = 50, offset = 0 } = options ?? {};
+    const { event, entityType, entityId, userId, limit = 50, offset = 0 } = options ?? {};
 
-    const where: Record<string, unknown> = {};
+    // @ts-ignore Prisma typing workaround for dynamic OR clauses
+    const where: any = {};
     if (event) where.event = event;
     if (entityType) where.entityType = entityType;
     if (entityId) where.entityId = entityId;
+
+    if (userId) {
+        // Enforce cross-tenant isolation
+        const userWorkflows = await prisma.workflow.findMany({ where: { userId }, select: { id: true } });
+        const userExecutions = await prisma.execution.findMany({ where: { userId }, select: { id: true } });
+        const userTriggers = await prisma.trigger.findMany({ where: { userId }, select: { id: true } });
+        const userSteps = await prisma.stepExecution.findMany({ where: { execution: { userId } }, select: { id: true } });
+
+        where.OR = [
+            { entityType: "workflow", entityId: { in: userWorkflows.map(w => w.id) } },
+            { entityType: "execution", entityId: { in: userExecutions.map(e => e.id) } },
+            { entityType: "trigger", entityId: { in: userTriggers.map(t => t.id) } },
+            { entityType: "step", entityId: { in: userSteps.map(s => s.id) } }
+        ];
+    }
 
     const [entries, total] = await Promise.all([
         prisma.auditLog.findMany({

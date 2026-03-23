@@ -1,12 +1,14 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CreateTriggerSchema } from "@/lib/validations";
 import type { ApiResponse } from "@/lib/types";
 import { requireAuth, isAuthError } from "@/lib/auth";
+import { sanitizeTrigger, sanitizeTriggers } from "@/lib/triggers";
 
 // ─── GET /api/triggers ── List user's triggers ───────────────────────────────
 
-export async function GET(request: NextRequest) {
+async function GET_handler(request: NextRequest) {
     try {
         const userId = await requireAuth();
 
@@ -26,7 +28,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json<ApiResponse>({
             success: true,
-            data: triggers,
+            data: sanitizeTriggers(
+                triggers as Array<typeof triggers[number] & { config: Record<string, unknown> | null }>
+            ),
         });
     } catch (error) {
         if (isAuthError(error)) return error.response;
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
 
 // ─── POST /api/triggers ── Create a trigger ─────────────────────────────────
 
-export async function POST(request: NextRequest) {
+async function POST_handler(request: NextRequest) {
     try {
         const userId = await requireAuth();
 
@@ -90,7 +94,12 @@ export async function POST(request: NextRequest) {
         });
 
         return NextResponse.json<ApiResponse>(
-            { success: true, data: trigger },
+            {
+                success: true,
+                data: sanitizeTrigger(
+                    trigger as typeof trigger & { config: Record<string, unknown> | null }
+                ),
+            },
             { status: 201 }
         );
     } catch (error) {
@@ -102,3 +111,7 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
+
+export const GET = withRateLimit(GET_handler);
+export const POST = withRateLimit(POST_handler);

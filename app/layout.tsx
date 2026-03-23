@@ -3,8 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import {
   ClerkProvider,
-  SignedIn,
-  SignedOut,
+  Show,
   UserButton,
 } from "@clerk/nextjs";
 import { Toaster } from "sonner";
@@ -56,7 +55,7 @@ export default function RootLayout({
                 FlowSync
               </Link>
               <div className="nav-links">
-                <SignedIn>
+                <Show when="signed-in">
                   <Link href="/dashboard" className="nav-link">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
                     Dashboard
@@ -96,16 +95,16 @@ export default function RootLayout({
                     Profile
                   </Link>
 
-                  <UserButton afterSignOutUrl="/" />
-                </SignedIn>
-                <SignedOut>
+                  <UserButton />
+                </Show>
+                <Show when="signed-out">
                   <Link href="/sign-in" className="nav-link">
                     Sign In
                   </Link>
                   <Link href="/sign-up" className="btn btn-primary btn-sm">
                     Sign Up
                   </Link>
-                </SignedOut>
+                </Show>
               </div>
             </div>
           </nav>

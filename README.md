@@ -110,7 +110,14 @@ graph TD
 | | Execution Timeline | Step-by-step timing visualization |
 | **Security** | Authentication | Clerk-based user auth with middleware |
 | | User Isolation | Workflows/executions scoped to authenticated user |
-| | Rate Limiting | Per-IP request throttling |
+| | Rate Limiting | Per-IP request throttling via trusted proxy detection |
+| | Webhook Auth | Mandatory `x-webhook-secret` validation on ingress |
+| | SSRF Protection | Hostname blocklist prevents internal network requests |
+| | Tenant-Scoped Audit | Audit log queries restricted to caller's own entities |
+| | Admin-Only Ops APIs | Queue, metrics, scheduler gated by `ADMIN_USER_ID` |
+| | Security Headers | HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| | Input Validation | Zod schemas on all mutation endpoints |
+| | CORS Policy | Explicit origin allowlist via `ALLOWED_CORS_ORIGINS` |
 
 ---
 
@@ -149,12 +156,39 @@ graph TD
 | `GET` | `/api/triggers/:id` | Get trigger details |
 | `PUT` | `/api/triggers/:id` | Update trigger config |
 | `DELETE` | `/api/triggers/:id` | Delete a trigger |
-| `POST` | `/api/webhooks/:triggerId` | Webhook ingress endpoint |
-| `GET` | `/api/queue` | Queue monitoring stats |
-| `GET` | `/api/health` | System health / readiness probe |
-| `GET` | `/api/scheduler/status` | Scheduler status |
-| `GET` | `/api/observability/metrics` | System metrics snapshot |
-| `GET` | `/api/observability/audit` | Query audit log |
+| `POST` | `/api/webhooks/:triggerId` | Webhook ingress (requires `x-webhook-secret` header) |
+| `GET` | `/api/queue` | Queue monitoring stats (admin only) |
+| `GET` | `/api/health` | Health probe (detailed stats require auth) |
+| `GET` | `/api/scheduler/status` | Scheduler status (admin only) |
+| `GET` | `/api/observability/metrics` | System metrics snapshot (admin only) |
+| `GET` | `/api/observability/audit` | Query audit log (tenant-scoped) |
+
+---
+
+## Security
+
+FlowSync implements defense-in-depth across the entire stack:
+
+### Authentication & Authorization
+
+- **Clerk middleware** protects all routes except `/`, `/sign-in`, `/sign-up`, `/api/webhooks`, and `/api/health`.
+- **Webhook secret** — every webhook trigger generates a `webhookSecret` at creation time. The ingress endpoint **rejects** requests with a missing or incorrect `x-webhook-secret` header (HTTP 401). Responses are stripped to `{ executionId, status }` only.
+- **Admin-only endpoints** — `/api/queue`, `/api/observability/metrics`, and `/api/scheduler/status` return **403 Forbidden** unless the caller's Clerk user ID matches `ADMIN_USER_ID`.
+- **Tenant-scoped auditing** — `/api/observability/audit` filters results to the caller's own workflows, executions, triggers, and steps via Prisma `OR` joins.
+
+### Network & Transport
+
+- **Security headers** — `Strict-Transport-Security`, `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` applied globally.
+- **CORS** — Explicitly configured via `ALLOWED_CORS_ORIGINS` env var. No wildcard origins.
+- **Rate limiting** — Token bucket algorithm applied to every API route. IP extraction uses trusted proxy headers (`x-vercel-forwarded-for`, `cf-connecting-ip`, `fly-client-ip`) with fallback logic.
+
+### Application
+
+- **SSRF protection** — HTTP action nodes validate URLs against a blocklist: `localhost`, `127.0.0.1`, `[::1]`, `0.0.0.0`, `169.254.169.254`, `metadata.google.internal`, RFC 1918 ranges, `.internal`, and `.local` suffixes.
+- **Input validation** — Zod schemas validate all POST/PUT request bodies before database operations.
+- **SQL injection** — Prisma parameterizes all queries; no raw SQL with user input.
+- **XSS** — React's default encoding prevents injection; no `dangerouslySetInnerHTML` usage.
+- **Health endpoint** — Unauthenticated callers receive only `{ status, uptimeMs, timestamp }`. Full diagnostics (memory, queue depth, DLQ, backpressure) require a valid session.
 
 ---
 
@@ -215,6 +249,8 @@ npm run dev
 | `CLERK_SECRET_KEY` | Clerk secret key |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in page path (default: `/sign-in`) |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Sign-up page path (default: `/sign-up`) |
+| `ADMIN_USER_ID` | Clerk user ID for admin-only endpoints (queue, metrics, scheduler) |
+| `ALLOWED_CORS_ORIGINS` | Comma-separated list of allowed CORS origins for API routes |
 
 ---
 

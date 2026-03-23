@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { ApiResponse } from "@/lib/types";
@@ -7,7 +8,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 // ─── GET /api/executions/[id] ── Get execution detail ────────────────────────
 
-export async function GET(request: NextRequest, context: RouteContext) {
+async function GET_handler(request: NextRequest, context: RouteContext) {
     try {
         const userId = await requireAuth();
         const { id } = await context.params;
@@ -40,3 +41,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
         );
     }
 }
+
+
+export const GET = withRateLimit(GET_handler);

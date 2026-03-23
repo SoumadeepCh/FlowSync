@@ -58,6 +58,31 @@ export class ActionNodeHandler implements ActionHandler {
         const url = config.url as string;
         if (!url) throw new Error("HTTP action requires a 'url' in config");
 
+        // SSRF Protection Blocklist
+        try {
+            const urlObj = new URL(url);
+            const host = urlObj.hostname.toLowerCase();
+            
+            if (
+                host === "localhost" ||
+                host === "127.0.0.1" ||
+                host === "0.0.0.0" ||
+                host === "169.254.169.254" || // Cloud Metadata
+                host === "metadata.google.internal" ||
+                host === "[::1]" ||
+                /^10\./.test(host) ||
+                /^192\.168\./.test(host) ||
+                /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+                host.endsWith(".internal") ||
+                host.endsWith(".local")
+            ) {
+                throw new Error(`SSRF Protection: Requests to internal network host '${host}' are blocked.`);
+            }
+        } catch (e) {
+            if (e instanceof Error && e.message.startsWith("SSRF")) throw e;
+            throw new Error(`Invalid URL provided: ${url}`);
+        }
+
         const method = ((config.method as string) || "GET").toUpperCase();
         const headers = (config.headers as Record<string, string>) || {};
         const body = config.body as string | undefined;

@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/middleware/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { executeWorkflow } from "@/lib/orchestrator";
@@ -9,7 +10,7 @@ type RouteContext = { params: Promise<{ triggerId: string }> };
 //
 // External systems call this URL to fire a trigger and start a workflow execution.
 
-export async function POST(request: NextRequest, context: RouteContext) {
+async function POST_handler(request: NextRequest, context: RouteContext) {
     try {
         const { triggerId } = await context.params;
 
@@ -41,6 +42,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
             return NextResponse.json<ApiResponse>(
                 { success: false, error: "This trigger is not a webhook trigger" },
                 { status: 400 }
+            );
+        }
+
+        // 3.5 Verify webhook secret (mandatory)
+        const expectedSecret = (trigger.config as Record<string, unknown>)?.webhookSecret as string | undefined;
+        const providedSecret = request.headers.get("x-webhook-secret");
+
+        if (!expectedSecret || !providedSecret || providedSecret !== expectedSecret) {
+            return NextResponse.json<ApiResponse>(
+                { success: false, error: "Unauthorized: Invalid or missing webhook secret" },
+                { status: 401 }
             );
         }
 
@@ -79,17 +91,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
             data: { lastFiredAt: new Date() },
         });
 
-        // 8. Fetch full execution detail
-        const execution = await prisma.execution.findUnique({
-            where: { id: result.executionId },
-            include: {
-                workflow: { select: { id: true, name: true } },
-                steps: { orderBy: { createdAt: "asc" } },
-            },
-        });
-
+        // 8. Return minimal execution receipt (no internal details)
         return NextResponse.json<ApiResponse>(
-            { success: true, data: execution },
+            {
+                success: true,
+                data: {
+                    executionId: result.executionId,
+                    status: result.status,
+                },
+            },
             { status: 201 }
         );
     } catch (error) {
@@ -100,3 +110,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         );
     }
 }
+
+
+export const POST = withRateLimit(POST_handler);
