@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     ReactFlow,
     Background,
@@ -20,7 +20,7 @@ import "@xyflow/react/dist/style.css";
 import { toast } from "sonner";
 import {
     Play, Square, Zap, GitBranch, Clock, Copy, Merge,
-    ArrowRightLeft, Webhook, Save, Plus, Trash2, Settings,
+    ArrowRightLeft, Webhook, Save, Plus, Trash2, Settings, X,
 } from "lucide-react";
 import type { WorkflowDefinition, WorkflowNode, WorkflowEdge, NodeType } from "@/lib/types";
 
@@ -43,13 +43,24 @@ const getNodeColor = (type: string) =>
 
 // ─── Custom Node Component ─────────────────────────────────────────────────
 
+// start nodes: only source (outgoing). end nodes: only target (incoming).
+// all other nodes: both handles.
 function CustomNode({ data }: { data: { label: string; nodeType: string; selected?: boolean } }) {
     const color = getNodeColor(data.nodeType);
     const entry = NODE_PALETTE.find((n) => n.type === data.nodeType);
+    const isStart = data.nodeType === "start";
+    const isEnd = data.nodeType === "end";
 
     return (
         <>
-            <Handle type="target" position={Position.Top} style={{ background: color, width: 8, height: 8 }} />
+            {/* Incoming handle — hidden for start nodes */}
+            {!isStart && (
+                <Handle
+                    type="target"
+                    position={Position.Top}
+                    style={{ background: color, width: 8, height: 8 }}
+                />
+            )}
             <div
                 style={{
                     background: "#12121a",
@@ -78,7 +89,14 @@ function CustomNode({ data }: { data: { label: string; nodeType: string; selecte
                     {data.nodeType}
                 </span>
             </div>
-            <Handle type="source" position={Position.Bottom} style={{ background: color, width: 8, height: 8 }} />
+            {/* Outgoing handle — hidden for end nodes */}
+            {!isEnd && (
+                <Handle
+                    type="source"
+                    position={Position.Bottom}
+                    style={{ background: color, width: 8, height: 8 }}
+                />
+            )}
         </>
     );
 }
@@ -86,6 +104,15 @@ function CustomNode({ data }: { data: { label: string; nodeType: string; selecte
 const nodeTypes: NodeTypes = {
     custom: CustomNode,
 };
+
+// ─── Edge Context Menu ─────────────────────────────────────────────────────
+
+interface EdgeMenuState {
+    edgeId: string;
+    x: number;
+    y: number;
+}
+
 
 // ─── Convert between FlowSync format and ReactFlow format ──────────────────
 
@@ -150,6 +177,7 @@ export default function WorkflowEditor({
     );
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
     const [editLabel, setEditLabel] = useState("");
+    const [edgeMenu, setEdgeMenu] = useState<EdgeMenuState | null>(null);
     const nodeCounter = useRef(initialDefinition.nodes.length);
 
     const onConnect = useCallback(
@@ -168,6 +196,27 @@ export default function WorkflowEditor({
         },
         [setEdges]
     );
+
+    // ── Keyboard delete for selected node ───────────────────────────────
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.key === "Delete" || e.key === "Backspace") &&
+                !(e.target instanceof HTMLInputElement) &&
+                !(e.target instanceof HTMLTextAreaElement)) {
+                if (selectedNode) {
+                    setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
+                    setEdges((eds) =>
+                        eds.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id)
+                    );
+                    toast.success(`"${String(selectedNode.data.label)}" deleted`);
+                    setSelectedNode(null);
+                }
+            }
+            if (e.key === "Escape") setEdgeMenu(null);
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [selectedNode, setNodes, setEdges]);
 
     const addNode = useCallback(
         (type: NodeType) => {
@@ -198,9 +247,28 @@ export default function WorkflowEditor({
         setSelectedNode(null);
     }, [selectedNode, setNodes, setEdges]);
 
+    // ── Right-click on edge → show context menu ──────────────────────────
+    const onEdgeContextMenu = useCallback((e: React.MouseEvent, edge: Edge) => {
+        e.preventDefault();
+        setEdgeMenu({ edgeId: edge.id, x: e.clientX, y: e.clientY });
+    }, []);
+
+    const deleteEdge = useCallback((edgeId: string) => {
+        setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+        setEdgeMenu(null);
+        toast.success("Connection removed");
+    }, [setEdges]);
+
     const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+        setEdgeMenu(null);
         setSelectedNode(node);
         setEditLabel(String(node.data.label || ""));
+    }, []);
+
+    // Close edge menu on canvas click
+    const onPaneClick = useCallback(() => {
+        setEdgeMenu(null);
+        setSelectedNode(null);
     }, []);
 
     const updateNodeLabel = useCallback(() => {
@@ -364,7 +432,7 @@ export default function WorkflowEditor({
             </div>
 
             {/* Canvas */}
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, position: "relative" }}>
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -372,6 +440,8 @@ export default function WorkflowEditor({
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onNodeClick={onNodeClick}
+                    onPaneClick={onPaneClick}
+                    onEdgeContextMenu={onEdgeContextMenu}
                     nodeTypes={nodeTypes}
                     fitView
                     proOptions={{ hideAttribution: true }}
@@ -399,6 +469,55 @@ export default function WorkflowEditor({
                         maskColor="rgba(0,0,0,0.7)"
                     />
                 </ReactFlow>
+
+                {/* Edge right-click context menu */}
+                {edgeMenu && (
+                    <div
+                        style={{
+                            position: "fixed",
+                            top: edgeMenu.y,
+                            left: edgeMenu.x,
+                            zIndex: 1000,
+                            background: "#12121a",
+                            border: "1px solid #2a2a3f",
+                            borderRadius: 8,
+                            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                            overflow: "hidden",
+                            minWidth: 160,
+                        }}
+                    >
+                        <div style={{
+                            padding: "0.4rem 0.75rem",
+                            fontSize: "0.6875rem",
+                            color: "#6b7280",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            borderBottom: "1px solid #1e1e2e",
+                        }}>
+                            Connection
+                        </div>
+                        <button
+                            onClick={() => deleteEdge(edgeMenu.edgeId)}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                width: "100%",
+                                padding: "0.5rem 0.75rem",
+                                background: "transparent",
+                                border: "none",
+                                color: "#ef4444",
+                                fontSize: "0.8125rem",
+                                cursor: "pointer",
+                                textAlign: "left",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.1)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                            <X size={13} /> Remove Connection
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

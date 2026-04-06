@@ -42,3 +42,6 @@ next-env.d.ts
 
 /generated/prisma
 PLAN.md 
+DEMO_SCRIPT.md
+FIGMA_SYSTEM_DESIGN_GUIDE.md
+INTERVIEW_GUIDE.md

@@ -36,12 +36,21 @@ export default function QueuePage() {
     const [data, setData] = useState<QueueData | null>(null);
     const [loading, setLoading] = useState(true);
     const [autoRefresh, setAutoRefresh] = useState(true);
+    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
     const fetchStats = useCallback(async () => {
         try {
             const res = await fetch("/api/queue");
+            if (res.status === 403) {
+                setIsAdmin(false);
+                setLoading(false);
+                return;
+            }
             const json = await res.json();
-            if (json.success) setData(json.data);
+            if (json.success) {
+                setIsAdmin(true);
+                setData(json.data);
+            }
         } catch {
             console.error("Failed to fetch queue stats");
         } finally {
@@ -51,10 +60,11 @@ export default function QueuePage() {
 
     useEffect(() => {
         fetchStats();
-        if (!autoRefresh) return;
+        // Only poll if we know we are admin — stop immediately on 403
+        if (!autoRefresh || isAdmin === false) return;
         const interval = setInterval(fetchStats, 2000);
         return () => clearInterval(interval);
-    }, [fetchStats, autoRefresh]);
+    }, [fetchStats, autoRefresh, isAdmin]);
 
     const successRate =
         data && data.queue.totalProcessed + data.queue.totalFailed > 0
@@ -100,6 +110,18 @@ export default function QueuePage() {
             {loading ? (
                 <div className="loading-center">
                     <div className="spinner" />
+                </div>
+            ) : isAdmin === false ? (
+                <div className="empty-state">
+                    <div className="empty-state-icon">🔒</div>
+                    <h3 className="empty-state-title">Admin Access Required</h3>
+                    <p className="empty-state-text">
+                        This page is restricted to administrators only.
+                        Queue metrics and DLQ data are sensitive operational information.
+                    </p>
+                    <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.5rem" }}>
+                        Set <code>ADMIN_USER_ID</code> in your environment to your Clerk user ID to gain access.
+                    </p>
                 </div>
             ) : !data ? (
                 <div className="empty-state">

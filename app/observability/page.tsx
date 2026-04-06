@@ -56,12 +56,21 @@ function formatUptime(ms: number): string {
 export default function ObservabilityPage() {
     const [data, setData] = useState<MetricsData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
     const fetchMetrics = useCallback(async () => {
         try {
             const res = await fetch("/api/observability/metrics");
+            if (res.status === 403) {
+                setIsAdmin(false);
+                setLoading(false);
+                return;
+            }
             const json = await res.json();
-            if (json.success) setData(json.data);
+            if (json.success) {
+                setIsAdmin(true);
+                setData(json.data);
+            }
         } catch { /* ignore */ } finally {
             setLoading(false);
         }
@@ -69,12 +78,31 @@ export default function ObservabilityPage() {
 
     useEffect(() => {
         fetchMetrics();
+        // Only keep polling if we are confirmed admin — stop immediately on 403
+        if (isAdmin === false) return;
         const interval = setInterval(fetchMetrics, 15_000);
         return () => clearInterval(interval);
-    }, [fetchMetrics]);
+    }, [fetchMetrics, isAdmin]);
 
     if (loading) {
         return <div className="container"><div className="loading-center"><div className="spinner" /></div></div>;
+    }
+
+    if (isAdmin === false) {
+        return (
+            <div className="container">
+                <div className="empty-state">
+                    <div className="empty-state-icon">🔒</div>
+                    <h3 className="empty-state-title">Admin Access Required</h3>
+                    <p className="empty-state-text">
+                        Metrics and observability data are restricted to administrators only.
+                    </p>
+                    <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.5rem" }}>
+                        Set <code>ADMIN_USER_ID</code> in your environment to your Clerk user ID to gain access.
+                    </p>
+                </div>
+            </div>
+        );
     }
 
     if (!data) {
