@@ -12,6 +12,9 @@ import { ForkHandler } from "./handlers/fork-handler";
 import { JoinHandler } from "./handlers/join-handler";
 import { TransformHandler } from "./handlers/transform-handler";
 import { WebhookResponseHandler } from "./handlers/webhook-response-handler";
+// Phase 12: Automation handlers
+import { FetchDataHandler } from "./handlers/fetch-handler";
+import { SendEmailHandler } from "./handlers/email-handler";
 
 class HandlerRegistry {
     private handlers = new Map<string, ActionHandler>();
@@ -60,6 +63,9 @@ registry.register(new ForkHandler());
 registry.register(new JoinHandler());
 registry.register(new TransformHandler());
 registry.register(new WebhookResponseHandler());
+// Phase 12: Automation handlers
+registry.register(new FetchDataHandler());
+registry.register(new SendEmailHandler());
 
 export { registry };
 export default registry;

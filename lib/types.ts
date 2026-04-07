@@ -1,6 +1,6 @@
 // ─── Workflow Node Types ─────────────────────────────────────────────────────
 
-export type NodeType = "start" | "end" | "action" | "condition" | "delay" | "fork" | "join" | "transform" | "webhook_response";
+export type NodeType = "start" | "end" | "action" | "condition" | "delay" | "fork" | "join" | "transform" | "webhook_response" | "fetch_data" | "send_email";
 
 export interface WorkflowNode {
     id: string;

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const WorkflowNodeSchema = z.object({
     id: z.string().min(1, "Node ID is required"),
-    type: z.enum(["start", "end", "action", "condition", "delay", "fork", "join"]),
+    type: z.enum(["start", "end", "action", "condition", "delay", "fork", "join", "fetch_data", "send_email", "transform", "webhook_response"]),
     label: z.string().min(1, "Node label is required"),
     config: z.record(z.string(), z.unknown()).default({}),
     position: z

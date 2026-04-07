@@ -37,6 +37,23 @@ export async function publishJob(params: {
     // ─── Idempotency check (Phase 6) ────────────────────────────────────
     const ideKey = idempotencyStore.generateKey(executionId, node.id);
 
+    // ── DB-level duplicate guard ──────────────────────────────────────────────
+    // Check if this (executionId, nodeId) already has a non-skipped step.
+    // This prevents the result-handler race condition where two concurrent step
+    // completions both calculate the next ready nodes and both try to publish
+    // the same downstream node (e.g. send_email), causing duplicate execution.
+    const existingStep = await prisma.stepExecution.findFirst({
+        where: {
+            executionId,
+            nodeId: node.id,
+            status: { in: ["pending", "running", "completed"] },
+        },
+        select: { id: true },
+    });
+    if (existingStep) {
+        return existingStep.id;
+    }
+
     // Create StepExecution in DB
     const step = await prisma.stepExecution.create({
         data: {
@@ -50,10 +67,10 @@ export async function publishJob(params: {
         },
     });
 
-    // Register in idempotency store
+    // Register in idempotency store (in-memory layer on top of DB check)
     const ideCheck = idempotencyStore.checkAndSet(ideKey, step.id);
     if (ideCheck.duplicate && ideCheck.existingStepId) {
-        // Duplicate — clean up the step we just created and return existing
+        // Duplicate in memory — clean up and return existing
         await prisma.stepExecution.delete({ where: { id: step.id } });
         return ideCheck.existingStepId;
     }

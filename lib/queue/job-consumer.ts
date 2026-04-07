@@ -20,24 +20,56 @@ import { recordAudit } from "../observability/audit-trail";
 import { workerHeartbeat } from "../workers/worker-heartbeat";
 import { v4 as uuid } from "uuid";
 
-let isRunning = false;
-let isShuttingDown = false;
-let activeJobs = 0;
-let totalRetries = 0;
+// ─── HMR-safe singleton state (persisted across Next.js hot reloads) ─────────
+// In dev mode, Next.js re-imports modules on every file change.
+// Without globalThis persistence, a new consumer would start on each reload,
+// causing the same job to be processed multiple times (hence duplicate emails).
+type ConsumerGlobal = {
+    __consumerRunning?: boolean;
+    __consumerShuttingDown?: boolean;
+    __consumerActiveJobs?: number;
+    __consumerTotalRetries?: number;
+    __consumerPollTimer?: ReturnType<typeof setInterval> | null;
+    __consumerWorkerId?: string;
+};
+const g = globalThis as ConsumerGlobal;
+
+if (!g.__consumerWorkerId) {
+    g.__consumerWorkerId = `worker-${uuid().slice(0, 8)}`;
+}
+
+let isRunning: boolean = g.__consumerRunning ?? false;
+let isShuttingDown: boolean = g.__consumerShuttingDown ?? false;
+let activeJobs: number = g.__consumerActiveJobs ?? 0;
+let totalRetries: number = g.__consumerTotalRetries ?? 0;
 const MAX_CONCURRENCY = 5;
-const POLL_INTERVAL_MS = 500; // Phase 11: Poll every 500ms
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+const POLL_INTERVAL_MS = 500;
+let pollTimer: ReturnType<typeof setInterval> | null = g.__consumerPollTimer ?? null;
+
+// Helper to sync local vars back to globalThis
+function syncGlobal() {
+    g.__consumerRunning = isRunning;
+    g.__consumerShuttingDown = isShuttingDown;
+    g.__consumerActiveJobs = activeJobs;
+    g.__consumerTotalRetries = totalRetries;
+    g.__consumerPollTimer = pollTimer;
+}
 
 // Unique worker ID for this consumer instance
-const WORKER_ID = `worker-${uuid().slice(0, 8)}`;
+const WORKER_ID = g.__consumerWorkerId;
 
 /**
  * Start the consumer loop.
  * Phase 11: Uses polling-based dequeue from PostgreSQL.
  */
 export function startConsumer(): void {
-    if (isRunning) return;
+    if (isRunning) {
+        // Already running (either from before HMR or this session)
+        logger.info("Consumer already running — skipping duplicate start", { workerId: WORKER_ID });
+        return;
+    }
     isRunning = true;
+    syncGlobal();
 
     logger.info("Consumer started", { workerId: WORKER_ID, pollIntervalMs: POLL_INTERVAL_MS });
 
@@ -50,6 +82,7 @@ export function startConsumer(): void {
     pollTimer = setInterval(() => {
         if (!isShuttingDown) drainQueue();
     }, POLL_INTERVAL_MS);
+    syncGlobal();
 
     // Initial drain
     drainQueue();
