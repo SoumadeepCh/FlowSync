@@ -630,7 +630,7 @@ function WorkflowEditorContent({
                                     <option value="hourly">Every hour</option>
                                 </select>
                                 <select style={selectStyle}
-                                    value={Number((selectedNode.data.config as Record<string, unknown>)?.hour ?? 8)}
+                                    value={Number((selectedNode.data.config as Record<string, unknown>)?.hour ?? 7)}
                                     onChange={(e) => updateNodeConfig("hour", Number(e.target.value))}>
                                     {Array.from({ length: 24 }, (_, i) => (
                                         <option key={i} value={i}>

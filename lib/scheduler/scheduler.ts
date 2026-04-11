@@ -71,8 +71,9 @@ class Scheduler {
 
     /**
      * Execute a single scheduler tick: find and fire due cron triggers.
+     * Made public to allow external invocation via Vercel Cron.
      */
-    private async tick(): Promise<void> {
+    public async tick(): Promise<void> {
         // Prevent overlapping ticks
         if (this._isProcessing) return;
 
